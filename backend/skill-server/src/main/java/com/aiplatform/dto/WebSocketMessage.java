@@ -11,8 +11,18 @@ import java.util.Map;
 
 /**
  * WebSocket message types for skill protocol.
+ * All nested message classes implement WebSocketMessageBase for type compatibility.
  */
 public class WebSocketMessage {
+
+    /**
+     * Base interface for all WebSocket message types.
+     * Allows different message protocol types to be used interchangeably.
+     */
+    public interface WebSocketMessageBase {
+        String getType();
+        String getSessionId();
+    }
 
     /**
      * Base message structure
@@ -21,7 +31,7 @@ public class WebSocketMessage {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class BaseMessage {
+    public static class BaseMessage implements WebSocketMessageBase {
         private String type;
         private String sessionId;
         private Long timestamp;
@@ -35,7 +45,7 @@ public class WebSocketMessage {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class SkillExecuteRequest {
+    public static class SkillExecuteRequest implements WebSocketMessageBase {
         public static final String TYPE = "skill.execute";
 
         private String type = TYPE;
@@ -62,7 +72,7 @@ public class WebSocketMessage {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class SkillProgressResponse {
+    public static class SkillProgressResponse implements WebSocketMessageBase {
         public static final String TYPE = "skill.progress";
 
         private String type = TYPE;
@@ -88,7 +98,7 @@ public class WebSocketMessage {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class SkillResultResponse {
+    public static class SkillResultResponse implements WebSocketMessageBase {
         public static final String TYPE = "skill.result";
 
         private String type = TYPE;
@@ -123,7 +133,7 @@ public class WebSocketMessage {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class SkillErrorResponse {
+    public static class SkillErrorResponse implements WebSocketMessageBase {
         public static final String TYPE = "skill.error";
 
         private String type = TYPE;
@@ -148,7 +158,7 @@ public class WebSocketMessage {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class SkillPauseRequest {
+    public static class SkillPauseRequest implements WebSocketMessageBase {
         public static final String TYPE = "skill.pause";
 
         private String type = TYPE;
@@ -162,7 +172,7 @@ public class WebSocketMessage {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class SkillResumeRequest {
+    public static class SkillResumeRequest implements WebSocketMessageBase {
         public static final String TYPE = "skill.resume";
 
         private String type = TYPE;
@@ -176,7 +186,7 @@ public class WebSocketMessage {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class SkillCancelRequest {
+    public static class SkillCancelRequest implements WebSocketMessageBase {
         public static final String TYPE = "skill.cancel";
 
         private String type = TYPE;
@@ -264,10 +274,15 @@ public class WebSocketMessage {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
-    public static class Heartbeat {
+    public static class Heartbeat implements WebSocketMessageBase {
         public static final String TYPE = "heartbeat";
 
         private String type = TYPE;
         private long timestamp;
+
+        @Override
+        public String getSessionId() {
+            return null; // Heartbeat has no session
+        }
     }
 }

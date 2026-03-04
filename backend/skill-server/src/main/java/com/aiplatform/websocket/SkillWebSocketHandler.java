@@ -1,5 +1,9 @@
 package com.aiplatform.websocket;
 
+import com.aiplatform.agent.AgentAdapter;
+import com.aiplatform.agent.AgentAdapterRegistry;
+import com.aiplatform.agent.AgentExecutionContext;
+import com.aiplatform.dto.OpenCodeMessage;
 import com.aiplatform.dto.WebSocketMessage;
 import com.aiplatform.service.SessionService;
 import com.aiplatform.service.SkillExecutionService;
@@ -15,11 +19,13 @@ import reactor.core.publisher.Sinks;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Main WebSocket handler for skill server.
  * Handles WebSocket connections, message routing, and skill execution.
+ * Supports both skill.execute and agent.execute protocols.
  */
 @Slf4j
 @Component
@@ -29,6 +35,7 @@ public class SkillWebSocketHandler implements WebSocketHandler {
     private final ObjectMapper objectMapper;
     private final SessionService sessionService;
     private final SkillExecutionService skillExecutionService;
+    private final AgentAdapterRegistry agentAdapterRegistry;
 
     // Active sessions: sessionId -> message sink
     private final Map<String, Sinks.Many<String>> activeSessions = new ConcurrentHashMap<>();
@@ -86,6 +93,10 @@ public class SkillWebSocketHandler implements WebSocketHandler {
                 case WebSocketMessage.SkillPauseRequest.TYPE -> handleSkillPause(message, outputSink);
                 case WebSocketMessage.SkillResumeRequest.TYPE -> handleSkillResume(message, outputSink);
                 case WebSocketMessage.SkillCancelRequest.TYPE -> handleSkillCancel(message, outputSink);
+                // OpenCode agent protocol
+                case OpenCodeMessage.AgentExecuteRequest.TYPE -> handleAgentExecute(wsSessionId, message, outputSink);
+                case OpenCodeMessage.AgentCancelRequest.TYPE -> handleAgentCancel(message, outputSink);
+                case OpenCodeMessage.AgentToolResultRequest.TYPE -> handleAgentToolResult(message, outputSink);
                 case WebSocketMessage.Heartbeat.TYPE -> handleHeartbeat(outputSink);
                 default -> sendError(outputSink, null, "UNKNOWN_TYPE", "Unknown message type: " + type);
             }
@@ -96,7 +107,7 @@ public class SkillWebSocketHandler implements WebSocketHandler {
     }
 
     /**
-     * Handle skill execute request
+     * Handle skill execute request (legacy protocol)
      */
     private void handleSkillExecute(String wsSessionId, String message, Sinks.Many<String> outputSink) {
         try {
@@ -107,25 +118,91 @@ public class SkillWebSocketHandler implements WebSocketHandler {
 
             String sessionId = (request.getSessionId() != null && !request.getSessionId().isEmpty())
                     ? request.getSessionId()
-                    : java.util.UUID.randomUUID().toString();
+                    : UUID.randomUUID().toString();
 
             log.info("Executing skill: sessionId={}, skillId={}", sessionId, request.getPayload().getSkillId());
 
-            // Execute skill asynchronously
-            skillExecutionService.executeSkill(sessionId, request.getPayload())
-                    .subscribe(
-                            progress -> sendProgress(outputSink, sessionId, progress),
-                            error -> {
-                                log.error("Skill execution failed: {}", error.getMessage());
-                                sendError(outputSink, sessionId, "EXECUTION_ERROR", error.getMessage());
-                            },
-                            () -> log.info("Skill execution completed: sessionId={}", sessionId)
-                    );
+            // Build execution context
+            AgentExecutionContext context = AgentExecutionContext.builder()
+                    .wsSessionId(wsSessionId)
+                    .sessionId(sessionId)
+                    .protocolType(WebSocketMessage.SkillExecuteRequest.TYPE)
+                    .skillRequest(request)
+                    .streaming(true)
+                    .channel(request.getPayload().getChannel())
+                    .build();
+
+            // Get appropriate adapter and execute
+            AgentAdapter adapter = agentAdapterRegistry.getAdapter(WebSocketMessage.SkillExecuteRequest.TYPE);
+            executeWithAdapter(context, adapter, outputSink);
 
         } catch (Exception e) {
             log.error("Error executing skill: {}", e.getMessage(), e);
             sendError(outputSink, null, "EXECUTION_ERROR", "Failed to execute skill: " + e.getMessage());
         }
+    }
+
+    /**
+     * Handle agent execute request (OpenCode protocol)
+     */
+    private void handleAgentExecute(String wsSessionId, String message, Sinks.Many<String> outputSink) {
+        try {
+            OpenCodeMessage.AgentExecuteRequest request = objectMapper.readValue(
+                    message,
+                    OpenCodeMessage.AgentExecuteRequest.class
+            );
+
+            String sessionId = (request.getSessionId() != null && !request.getSessionId().isEmpty())
+                    ? request.getSessionId()
+                    : UUID.randomUUID().toString();
+
+            boolean streaming = request.getPayload().isStream();
+            String skillId = request.getPayload().getSkillId();
+            String skillName = request.getPayload().getSkillName();
+
+            log.info("Executing agent: sessionId={}, skillId={}, skillName={}, streaming={}",
+                    sessionId, skillId, skillName, streaming);
+
+            // Build execution context
+            AgentExecutionContext context = AgentExecutionContext.builder()
+                    .wsSessionId(wsSessionId)
+                    .sessionId(sessionId)
+                    .protocolType(OpenCodeMessage.AgentExecuteRequest.TYPE)
+                    .agentRequest(request)
+                    .streaming(streaming)
+                    .channel(request.getPayload().getChannel())
+                    .build();
+
+            // Get OpenCode adapter and execute
+            AgentAdapter adapter = agentAdapterRegistry.getAdapter(OpenCodeMessage.AgentExecuteRequest.TYPE);
+            executeWithAdapter(context, adapter, outputSink);
+
+        } catch (Exception e) {
+            log.error("Error executing agent: {}", e.getMessage(), e);
+            sendAgentError(outputSink, null, "EXECUTION_ERROR", "Failed to execute agent: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Execute with adapter and stream results
+     */
+    private void executeWithAdapter(AgentExecutionContext context, AgentAdapter adapter, Sinks.Many<String> outputSink) {
+        adapter.execute(context)
+                .subscribe(
+                        response -> {
+                            try {
+                                String json = objectMapper.writeValueAsString(response);
+                                outputSink.tryEmitNext(json);
+                            } catch (Exception e) {
+                                log.error("Error serializing response: {}", e.getMessage());
+                            }
+                        },
+                        error -> {
+                            log.error("Adapter execution failed: {}", error.getMessage());
+                            sendError(outputSink, context.getSessionId(), "EXECUTION_ERROR", error.getMessage());
+                        },
+                        () -> log.info("Adapter execution completed: sessionId={}", context.getSessionId())
+                );
     }
 
     /**
@@ -172,10 +249,49 @@ public class SkillWebSocketHandler implements WebSocketHandler {
                     WebSocketMessage.SkillCancelRequest.class
             );
             skillExecutionService.cancelSkill(request.getSessionId());
+            // Also cancel via adapter
+            AgentAdapter adapter = agentAdapterRegistry.getAdapter("skill.execute");
+            adapter.cancel(request.getSessionId());
             log.info("Skill cancelled: sessionId={}", request.getSessionId());
         } catch (Exception e) {
             log.error("Error cancelling skill: {}", e.getMessage());
             sendError(outputSink, null, "CANCEL_ERROR", e.getMessage());
+        }
+    }
+
+    /**
+     * Handle agent cancel request
+     */
+    private void handleAgentCancel(String message, Sinks.Many<String> outputSink) {
+        try {
+            OpenCodeMessage.AgentCancelRequest request = objectMapper.readValue(
+                    message,
+                    OpenCodeMessage.AgentCancelRequest.class
+            );
+            AgentAdapter adapter = agentAdapterRegistry.getAdapter("agent.execute");
+            adapter.cancel(request.getSessionId());
+            log.info("Agent cancelled: sessionId={}", request.getSessionId());
+        } catch (Exception e) {
+            log.error("Error cancelling agent: {}", e.getMessage());
+            sendAgentError(outputSink, null, "CANCEL_ERROR", e.getMessage());
+        }
+    }
+
+    /**
+     * Handle agent tool result submission
+     */
+    private void handleAgentToolResult(String message, Sinks.Many<String> outputSink) {
+        try {
+            OpenCodeMessage.AgentToolResultRequest request = objectMapper.readValue(
+                    message,
+                    OpenCodeMessage.AgentToolResultRequest.class
+            );
+            // In real implementation, this would submit tool results back to the agent
+            log.info("Received tool results for session: {}", request.getSessionId());
+            // TODO: Implement tool result handling
+        } catch (Exception e) {
+            log.error("Error handling tool results: {}", e.getMessage());
+            sendAgentError(outputSink, null, "TOOL_RESULT_ERROR", e.getMessage());
         }
     }
 
@@ -214,7 +330,7 @@ public class SkillWebSocketHandler implements WebSocketHandler {
     }
 
     /**
-     * Send error response
+     * Send error response (skill protocol)
      */
     private void sendError(Sinks.Many<String> outputSink, String sessionId, String code, String message) {
         try {
@@ -230,6 +346,26 @@ public class SkillWebSocketHandler implements WebSocketHandler {
             outputSink.tryEmitNext(errorMessage);
         } catch (Exception e) {
             log.error("Error sending error response: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Send agent error response (OpenCode protocol)
+     */
+    private void sendAgentError(Sinks.Many<String> outputSink, String sessionId, String code, String message) {
+        try {
+            String errorMessage = objectMapper.writeValueAsString(
+                    OpenCodeMessage.AgentErrorResponse.builder()
+                            .sessionId(sessionId)
+                            .payload(OpenCodeMessage.AgentErrorResponse.Payload.builder()
+                                    .code(code)
+                                    .message(message)
+                                    .build())
+                            .build()
+            );
+            outputSink.tryEmitNext(errorMessage);
+        } catch (Exception e) {
+            log.error("Error sending agent error response: {}", e.getMessage());
         }
     }
 

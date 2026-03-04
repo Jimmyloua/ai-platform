@@ -41,10 +41,29 @@ welink:
     queue-prefix: "welink:msg:"
     max-retries: 3
 
-  # Skill Server Configuration
+  # Skill Server Configuration (for HTTP fallback)
   skill-server:
     url: http://localhost:8080
     timeout: 60000
+
+# Gateway Client Configuration (Dual-Identity Mode)
+gateway:
+  client:
+    # Enable dual-mode: gateway with AK/SK as primary, direct HTTP fallback if unavailable
+    enabled: true
+    ws-url: ws://localhost:8081/ws/gateway
+    access-key: ${GATEWAY_ACCESS_KEY:}
+    secret-key: ${GATEWAY_SECRET_KEY:}
+    reconnect-interval: 5000
+    heartbeat-interval: 30000
+    # Fallback to direct HTTP if gateway unavailable
+    fallback-enabled: true
+    connection-timeout: 10000
+    # Streaming configuration
+    streaming:
+      enabled: true
+      chunk-timeout: 30000
+      max-chunks-per-session: 10000
 
 # Logging Configuration
 logging:

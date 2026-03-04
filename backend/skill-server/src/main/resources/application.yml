@@ -83,6 +83,16 @@ app:
     execution-timeout: 300s
     max-concurrent: 100
 
+  # Agent Adapter Configuration
+  agent:
+    default-type: DEFAULT
+    adapters:
+      default:
+        enabled: true
+      opencode:
+        enabled: true
+        streaming-default: true
+
 # Logging Configuration
 logging:
   level:
