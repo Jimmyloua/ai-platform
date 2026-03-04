@@ -5,17 +5,6 @@ spring:
   profiles:
     active: dev
 
-  # JPA/Hibernate Configuration
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    show-sql: false
-    properties:
-      hibernate:
-        format_sql: true
-        dialect: org.hibernate.dialect.MySQLDialect
-    open-in-view: false
-
   # Redis Configuration
   data:
     redis:
@@ -41,6 +30,15 @@ spring:
       write-dates-as-timestamps: false
     property-naming-strategy: LOWER_CAMEL_CASE
     default-property-inclusion: non_null
+
+# MyBatis Configuration
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.aiplatform.model
+  configuration:
+    map-underscore-to-camel-case: true
+    default-fetch-size: 100
+    default-statement-timeout: 30
 
 # Server Configuration
 server:
@@ -85,15 +83,22 @@ app:
     execution-timeout: 300s
     max-concurrent: 100
 
+  # Agent Adapter Configuration
+  agent:
+    default-type: DEFAULT
+    adapters:
+      default:
+        enabled: true
+      opencode:
+        enabled: true
+        streaming-default: true
+
 # Logging Configuration
 logging:
   level:
     root: INFO
     com.aiplatform: DEBUG
     org.springframework.web: DEBUG
-    org.hibernate.SQL: DEBUG
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
 
 ---
 # Development Profile
@@ -113,16 +118,10 @@ spring:
       idle-timeout: 30000
       connection-timeout: 30000
 
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-
 logging:
   level:
     com.aiplatform: DEBUG
-    org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    org.mybatis: DEBUG
 
 ---
 # Production Profile
@@ -142,11 +141,6 @@ spring:
       idle-timeout: 60000
       connection-timeout: 30000
 
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    show-sql: false
-
 logging:
   level:
     root: WARN
@@ -162,11 +156,6 @@ spring:
   datasource:
     url: jdbc:tc:mysql:8.0:///aiplatform_test
     driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
-
-  jpa:
-    hibernate:
-      ddl-auto: create-drop
-    show-sql: true
 
   flyway:
     enabled: false

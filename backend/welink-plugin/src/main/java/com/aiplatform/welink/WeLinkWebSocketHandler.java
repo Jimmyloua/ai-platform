@@ -1,6 +1,8 @@
 package com.aiplatform.welink;
 
+import com.aiplatform.config.GatewayClientProperties;
 import com.aiplatform.model.WeLinkMessage;
+import com.aiplatform.service.GatewayInvocationService;
 import com.aiplatform.service.SkillInvocationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -8,10 +10,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.*;
 
-import java.io.IOException;
-
 /**
- * WebSocket handler for WeLink messages
+ * WebSocket handler for WeLink messages.
+ * Routes messages through gateway client (dual-identity mode) or direct HTTP fallback.
  */
 @Slf4j
 @Component
@@ -19,7 +20,9 @@ import java.io.IOException;
 public class WeLinkWebSocketHandler implements WebSocketHandler {
 
     private final ObjectMapper objectMapper;
+    private final GatewayInvocationService gatewayInvocationService;
     private final SkillInvocationService skillInvocationService;
+    private final GatewayClientProperties gatewayProperties;
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -63,11 +66,22 @@ public class WeLinkWebSocketHandler implements WebSocketHandler {
     }
 
     /**
-     * Process message asynchronously
+     * Process message asynchronously.
+     * Routes through gateway if enabled, otherwise uses direct HTTP.
      */
     private void processMessageAsync(WeLinkMessage message) {
         // Check if this is a valid message that should invoke a skill
-        if (shouldInvokeSkill(message)) {
+        if (!shouldInvokeSkill(message)) {
+            return;
+        }
+
+        // Use dual-identity mode: gateway with fallback
+        if (gatewayProperties.isEnabled()) {
+            log.debug("Routing message through gateway: msgId={}", message.getMsgId());
+            gatewayInvocationService.invokeSkill(message);
+        } else {
+            // Gateway disabled, use direct HTTP
+            log.debug("Gateway disabled, using direct HTTP: msgId={}", message.getMsgId());
             skillInvocationService.invokeSkill(message);
         }
     }
@@ -118,7 +132,7 @@ public class WeLinkWebSocketHandler implements WebSocketHandler {
     }
 
     // Helper for Map.of
-    private static <K, V> Map<K, V> Map(K k1, V v1, K k2, V v2, K k3, V v3) {
+    private static <K, V> java.util.Map<K, V> Map(K k1, V v1, K k2, V v2, K k3, V v3) {
         java.util.Map<K, V> map = new java.util.HashMap<>();
         map.put(k1, v1);
         map.put(k2, v2);
@@ -126,7 +140,7 @@ public class WeLinkWebSocketHandler implements WebSocketHandler {
         return map;
     }
 
-    private static <K, V> Map<K, V> Map(K k1, V v1, K k2, V v2) {
+    private static <K, V> java.util.Map<K, V> Map(K k1, V v1, K k2, V v2) {
         java.util.Map<K, V> map = new java.util.HashMap<>();
         map.put(k1, v1);
         map.put(k2, v2);
