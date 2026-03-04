@@ -47,6 +47,9 @@ management:
 # Gateway Configuration
 app:
   gateway:
+    # Unique gateway identifier (use HOSTNAME env var in distributed deployment)
+    id: ${GATEWAY_ID:}
+
     websocket:
       path: /ws/gateway
       max-connections: 5000
@@ -74,6 +77,15 @@ app:
       max-connections-per-skill: 100
       connection-timeout: 30s
       idle-timeout: 60s
+
+    # Session routing configuration
+    routing:
+      # Session TTL in Redis (24 hours)
+      session-ttl: 24h
+      # Enable session affinity routing
+      enabled: true
+      # Maximum sessions per connection
+      max-sessions-per-connection: 100
 
 # Logging Configuration
 logging:
