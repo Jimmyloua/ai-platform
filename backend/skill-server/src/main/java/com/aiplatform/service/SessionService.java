@@ -1,16 +1,13 @@
 package com.aiplatform.service;
 
+import com.aiplatform.mapper.MessageMapper;
+import com.aiplatform.mapper.SessionMapper;
 import com.aiplatform.model.Message;
 import com.aiplatform.model.SkillSession;
-import com.aiplatform.repository.MessageRepository;
-import com.aiplatform.repository.SessionRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,8 +24,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SessionService {
 
-    private final SessionRepository sessionRepository;
-    private final MessageRepository messageRepository;
+    private final SessionMapper sessionMapper;
+    private final MessageMapper messageMapper;
     private final ObjectMapper objectMapper;
 
     /**
@@ -46,31 +43,22 @@ public class SessionService {
                 .status(SkillSession.Status.PENDING)
                 .build();
 
-        return sessionRepository.save(session);
+        sessionMapper.insert(session);
+        return session;
     }
 
     /**
      * Get session by ID
      */
     public Optional<SkillSession> getSession(String sessionId) {
-        return sessionRepository.findBySessionId(sessionId);
+        return sessionMapper.findBySessionId(sessionId);
     }
 
     /**
      * Get sessions for user
      */
     public List<SkillSession> getSessionsByUser(String userId) {
-        return sessionRepository.findByUserId(userId);
-    }
-
-    /**
-     * Get sessions for user with pagination
-     */
-    public Page<SkillSession> getSessionsByUser(String userId, int page, int size) {
-        return sessionRepository.findByUserId(
-                userId,
-                PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"))
-        );
+        return sessionMapper.findByUserId(userId);
     }
 
     /**
@@ -78,7 +66,7 @@ public class SessionService {
      */
     @Transactional
     public void updateStatus(String sessionId, SkillSession.Status status) {
-        sessionRepository.updateStatus(sessionId, status, LocalDateTime.now());
+        sessionMapper.updateStatus(sessionId, status.name(), LocalDateTime.now());
     }
 
     /**
@@ -88,10 +76,10 @@ public class SessionService {
     public void completeSession(String sessionId, Object result) {
         try {
             String resultJson = objectMapper.writeValueAsString(result);
-            sessionRepository.completeSession(sessionId, resultJson, LocalDateTime.now());
+            sessionMapper.completeSession(sessionId, resultJson, LocalDateTime.now());
         } catch (JsonProcessingException e) {
             log.error("Error serializing result: {}", e.getMessage());
-            sessionRepository.completeSession(sessionId, "{}", LocalDateTime.now());
+            sessionMapper.completeSession(sessionId, "{}", LocalDateTime.now());
         }
     }
 
@@ -100,7 +88,7 @@ public class SessionService {
      */
     @Transactional
     public void failSession(String sessionId, String errorMessage) {
-        sessionRepository.failSession(sessionId, errorMessage, LocalDateTime.now());
+        sessionMapper.failSession(sessionId, errorMessage, LocalDateTime.now());
     }
 
     /**
@@ -108,10 +96,10 @@ public class SessionService {
      */
     @Transactional
     public void deactivateSession(String sessionId) {
-        sessionRepository.findBySessionId(sessionId).ifPresent(session -> {
+        sessionMapper.findBySessionId(sessionId).ifPresent(session -> {
             if (session.getStatus() == SkillSession.Status.RUNNING ||
                 session.getStatus() == SkillSession.Status.PENDING) {
-                sessionRepository.updateStatus(sessionId, SkillSession.Status.CANCELLED, LocalDateTime.now());
+                sessionMapper.updateStatus(sessionId, SkillSession.Status.CANCELLED.name(), LocalDateTime.now());
             }
         });
     }
@@ -121,8 +109,8 @@ public class SessionService {
      */
     @Transactional
     public void deleteSession(String sessionId) {
-        messageRepository.deleteBySessionId(sessionId);
-        sessionRepository.findBySessionId(sessionId).ifPresent(sessionRepository::delete);
+        messageMapper.deleteBySessionId(sessionId);
+        sessionMapper.deleteBySessionId(sessionId);
     }
 
     /**
@@ -136,7 +124,7 @@ public class SessionService {
      * Get active sessions count
      */
     public long getActiveSessionsCount() {
-        return sessionRepository.countByStatus(SkillSession.Status.RUNNING) +
-               sessionRepository.countByStatus(SkillSession.Status.PENDING);
+        return sessionMapper.countByStatus(SkillSession.Status.RUNNING.name()) +
+               sessionMapper.countByStatus(SkillSession.Status.PENDING.name());
     }
 }

@@ -1,19 +1,17 @@
 package com.aiplatform.service;
 
 import com.aiplatform.dto.WebSocketMessage;
+import com.aiplatform.mapper.SessionMapper;
+import com.aiplatform.mapper.SkillMapper;
 import com.aiplatform.model.Skill;
 import com.aiplatform.model.SkillSession;
-import com.aiplatform.repository.SessionRepository;
-import com.aiplatform.repository.SkillRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
@@ -27,8 +25,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class SkillExecutionService {
 
-    private final SkillRepository skillRepository;
-    private final SessionRepository sessionRepository;
+    private final SkillMapper skillMapper;
+    private final SessionMapper sessionMapper;
     private final MessagePersistenceService messagePersistenceService;
 
     // Active executions: sessionId -> sink for progress updates
@@ -58,7 +56,7 @@ public class SkillExecutionService {
 
                 // Create session
                 SkillSession session = createSession(sessionId, skill, payload);
-                sessionRepository.save(session);
+                sessionMapper.insert(session);
 
                 // Store active execution
                 Sinks.Many<WebSocketMessage.SkillProgressResponse.Payload> progressSink =
@@ -125,7 +123,7 @@ public class SkillExecutionService {
             long duration = System.currentTimeMillis() - startTime;
             String result = "{\"status\":\"success\",\"duration\":" + duration + "}";
 
-            sessionRepository.completeSession(sessionId, result, LocalDateTime.now());
+            sessionMapper.completeSession(sessionId, result, LocalDateTime.now());
 
             sink.next(WebSocketMessage.SkillProgressResponse.Payload.builder()
                     .progress(100)
@@ -138,7 +136,7 @@ public class SkillExecutionService {
 
         } catch (Exception e) {
             log.error("Skill execution error: {}", e.getMessage(), e);
-            sessionRepository.failSession(sessionId, e.getMessage(), LocalDateTime.now());
+            sessionMapper.failSession(sessionId, e.getMessage(), LocalDateTime.now());
             sink.error(e);
         } finally {
             cleanup(sessionId);
@@ -174,11 +172,11 @@ public class SkillExecutionService {
      */
     private Skill findSkill(WebSocketMessage.SkillExecuteRequest.Payload payload) {
         if (payload.getSkillId() != null && !payload.getSkillId().isEmpty()) {
-            return skillRepository.findByIdAndIsActiveTrue(Long.parseLong(payload.getSkillId()))
+            return skillMapper.findByIdAndIsActiveTrue(Long.parseLong(payload.getSkillId()))
                     .orElse(null);
         }
         if (payload.getSkillName() != null && !payload.getSkillName().isEmpty()) {
-            return skillRepository.findByName(payload.getSkillName())
+            return skillMapper.findByName(payload.getSkillName())
                     .orElse(null);
         }
         return null;
@@ -203,7 +201,7 @@ public class SkillExecutionService {
      * Update session status
      */
     private void updateSessionStatus(String sessionId, SkillSession.Status status) {
-        sessionRepository.updateStatus(sessionId, status, LocalDateTime.now());
+        sessionMapper.updateStatus(sessionId, status.name(), LocalDateTime.now());
     }
 
     /**

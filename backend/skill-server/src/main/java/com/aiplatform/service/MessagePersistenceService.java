@@ -1,14 +1,11 @@
 package com.aiplatform.service;
 
+import com.aiplatform.mapper.MessageMapper;
 import com.aiplatform.model.Message;
-import com.aiplatform.repository.MessageRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,7 +21,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class MessagePersistenceService {
 
-    private final MessageRepository messageRepository;
+    private final MessageMapper messageMapper;
     private final ObjectMapper objectMapper;
 
     /**
@@ -39,7 +36,8 @@ public class MessagePersistenceService {
                 .content(content)
                 .build();
 
-        return messageRepository.save(message);
+        messageMapper.insert(message);
+        return message;
     }
 
     /**
@@ -59,7 +57,8 @@ public class MessagePersistenceService {
                     .toolCalls(toolCallsJson)
                     .build();
 
-            return messageRepository.save(message);
+            messageMapper.insert(message);
+            return message;
         } catch (JsonProcessingException e) {
             log.error("Error serializing tool calls: {}", e.getMessage());
             return saveMessage(sessionId, role, content);
@@ -80,38 +79,29 @@ public class MessagePersistenceService {
                 .name(name)
                 .build();
 
-        return messageRepository.save(message);
+        messageMapper.insert(message);
+        return message;
     }
 
     /**
      * Get messages for a session
      */
     public List<Message> getMessages(String sessionId) {
-        return messageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);
-    }
-
-    /**
-     * Get messages with pagination
-     */
-    public Page<Message> getMessages(String sessionId, int page, int size) {
-        return messageRepository.findBySessionId(
-                sessionId,
-                PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "createdAt"))
-        );
+        return messageMapper.findBySessionIdOrderByCreatedAtAsc(sessionId);
     }
 
     /**
      * Get last message in session
      */
     public Optional<Message> getLastMessage(String sessionId) {
-        return messageRepository.findLastMessage(sessionId);
+        return messageMapper.findLastMessage(sessionId);
     }
 
     /**
      * Get message count for session
      */
     public long getMessageCount(String sessionId) {
-        return messageRepository.countBySessionId(sessionId);
+        return messageMapper.countBySessionId(sessionId);
     }
 
     /**
@@ -119,7 +109,7 @@ public class MessagePersistenceService {
      */
     @Transactional
     public void deleteMessages(String sessionId) {
-        messageRepository.deleteBySessionId(sessionId);
+        messageMapper.deleteBySessionId(sessionId);
     }
 
     /**
@@ -127,10 +117,10 @@ public class MessagePersistenceService {
      */
     @Transactional
     public void updateTokenUsage(Long messageId, int inputTokens, int outputTokens) {
-        messageRepository.findById(messageId).ifPresent(message -> {
+        messageMapper.findById(messageId).ifPresent(message -> {
             message.setTokensInput(inputTokens);
             message.setTokensOutput(outputTokens);
-            messageRepository.save(message);
+            messageMapper.update(message);
         });
     }
 
@@ -138,8 +128,8 @@ public class MessagePersistenceService {
      * Get total token usage for a session
      */
     public TokenUsage getTokenUsage(String sessionId) {
-        int inputTokens = messageRepository.sumInputTokensBySessionId(sessionId);
-        int outputTokens = messageRepository.sumOutputTokensBySessionId(sessionId);
+        int inputTokens = messageMapper.sumInputTokensBySessionId(sessionId);
+        int outputTokens = messageMapper.sumOutputTokensBySessionId(sessionId);
         return new TokenUsage(inputTokens, outputTokens);
     }
 
