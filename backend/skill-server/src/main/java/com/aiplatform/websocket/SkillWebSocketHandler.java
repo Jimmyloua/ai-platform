@@ -105,10 +105,9 @@ public class SkillWebSocketHandler implements WebSocketHandler {
                     WebSocketMessage.SkillExecuteRequest.class
             );
 
-            String sessionId = request.getSessionId();
-            if (sessionId == null || sessionId.isEmpty()) {
-                sessionId = java.util.UUID.randomUUID().toString();
-            }
+            String sessionId = (request.getSessionId() != null && !request.getSessionId().isEmpty())
+                    ? request.getSessionId()
+                    : java.util.UUID.randomUUID().toString();
 
             log.info("Executing skill: sessionId={}, skillId={}", sessionId, request.getPayload().getSkillId());
 
