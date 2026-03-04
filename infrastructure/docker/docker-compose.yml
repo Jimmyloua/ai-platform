@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: aiplatform-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: aiplatform
+      MYSQL_USER: aiplatform
+      MYSQL_PASSWORD: aiplatform123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7.0-alpine
+    container_name: aiplatform-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Skill Server (Backend)
+  skill-server:
+    build:
+      context: ../backend/skill-server
+      dockerfile: Dockerfile
+    container_name: aiplatform-skill-server
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/aiplatform
+      SPRING_DATASOURCE_USERNAME: aiplatform
+      SPRING_DATASOURCE_PASSWORD: aiplatform123
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Skill Gateway
+  skill-gateway:
+    build:
+      context: ../backend/skill-gateway
+      dockerfile: Dockerfile
+    container_name: aiplatform-skill-gateway
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      SKILL_SERVER_URL: http://skill-server:8080
+    ports:
+      - "8081:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+      skill-server:
+        condition: service_healthy
+
+  # Frontend Web App
+  web:
+    build:
+      context: ../frontend
+      dockerfile: apps/web/Dockerfile
+    container_name: aiplatform-web
+    environment:
+      VITE_API_URL: http://localhost:8081/api
+      VITE_WS_URL: ws://localhost:8081/ws
+    ports:
+      - "3000:80"
+    depends_on:
+      - skill-gateway
+
+volumes:
+  mysql_data:
+  redis_data:

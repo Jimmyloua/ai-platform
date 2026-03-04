@@ -1,0 +1,36 @@
+{
+  "name": "@aiplatform/cui-sdk",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "SDK for AI Platform CUI - API client and protocol utilities",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "crypto-js": "^4.2.0",
+    "eventsource-parser": "^1.1.2",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/crypto-js": "^4.2.2",
+    "@types/uuid": "^9.0.8",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.2"
+  }
+}

@@ -1,0 +1,66 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: welink-plugin
+  profiles:
+    active: dev
+
+  # Redis Configuration
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 5000ms
+
+  # Jackson Configuration
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+# WeLink Configuration
+welink:
+  # WeLink Open API Configuration
+  api:
+    base-url: https://open.welink.huaweicloud.com
+    app-id: ${WELINK_APP_ID:}
+    app-secret: ${WELINK_APP_SECRET:}
+    timeout: 30000
+
+  # WebSocket Configuration
+  websocket:
+    url: wss://open.welink.huaweicloud.com/api/wss
+    reconnect-interval: 5000
+    heartbeat-interval: 30000
+
+  # Message Configuration
+  message:
+    queue-prefix: "welink:msg:"
+    max-retries: 3
+
+  # Skill Server Configuration
+  skill-server:
+    url: http://localhost:8080
+    timeout: 60000
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    com.aiplatform: DEBUG
+    org.springframework.web: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# Actuator Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when_authorized

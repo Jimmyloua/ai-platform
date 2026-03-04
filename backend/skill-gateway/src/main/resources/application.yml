@@ -1,0 +1,109 @@
+spring:
+  application:
+    name: skill-gateway
+
+  profiles:
+    active: dev
+
+  # Redis Configuration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+
+  # Jackson Configuration
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    property-naming-strategy: LOWER_CAMEL_CASE
+    default-property-inclusion: non_null
+
+# Server Configuration
+server:
+  port: ${SERVER_PORT:8081}
+  shutdown: graceful
+
+# Management/Actuator Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Gateway Configuration
+app:
+  gateway:
+    websocket:
+      path: /ws/gateway
+      max-connections: 5000
+      heartbeat-interval: 30000
+
+    auth:
+      aksk:
+        signature-version: v1
+        signature-ttl: 300000  # 5 minutes
+        header-name: Authorization
+
+    rate-limit:
+      enabled: true
+      requests-per-second: 100
+      burst-capacity: 200
+
+    circuit-breaker:
+      enabled: true
+      failure-rate-threshold: 50
+      slow-call-duration-threshold: 5s
+      wait-duration-in-open-state: 30s
+      permitted-number-of-calls-in-half-open-state: 10
+
+    connection-pool:
+      max-connections-per-skill: 100
+      connection-timeout: 30s
+      idle-timeout: 60s
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    com.aiplatform: DEBUG
+    org.springframework.web: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+---
+# Development Profile
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+logging:
+  level:
+    com.aiplatform: DEBUG
+    io.github.resilience4j: DEBUG
+
+---
+# Production Profile
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+logging:
+  level:
+    root: WARN
+    com.aiplatform: INFO

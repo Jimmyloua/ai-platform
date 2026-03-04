@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aiplatform
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aiplatform-secrets
+  namespace: aiplatform
+type: Opaque
+stringData:
+  mysql-root-password: rootpassword
+  mysql-password: aiplatform123
+  redis-password: ""
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiplatform-config
+  namespace: aiplatform
+data:
+  MYSQL_DATABASE: aiplatform
+  MYSQL_USER: aiplatform
+  SPRING_PROFILES_ACTIVE: k8s

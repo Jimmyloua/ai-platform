@@ -1,0 +1,18 @@
+#!/bin/sh
+# Maven Wrapper script
+set -e
+
+DEFAULT_MAVEN_VERSION="3.9.6"
+MAVEN_VERSION="${MAVEN_VERSION:-$DEFAULT_MAVEN_VERSION}"
+MAVEN_HOME="${MAVEN_HOME:-$HOME/.m2/wrapper/dists/apache-maven-$MAVEN_VERSION}"
+MAVEN_WRAPPER_PROPERTIES=".mvn/wrapper/maven-wrapper.properties"
+
+# Download Maven if not present
+if [ ! -d "$MAVEN_HOME" ]; then
+    echo "Downloading Maven $MAVEN_VERSION..."
+    mkdir -p "$MAVEN_HOME"
+    curl -fsSL "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/$MAVEN_VERSION/apache-maven-$MAVEN_VERSION-bin.tar.gz" | tar -xzf - -C "$MAVEN_HOME" --strip-components=1
+fi
+
+# Execute Maven
+exec "$MAVEN_HOME/bin/mvn" "$@"
