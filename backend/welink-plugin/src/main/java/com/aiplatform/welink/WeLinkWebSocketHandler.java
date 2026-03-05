@@ -10,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.*;
 
+import java.util.Map;
+
 /**
  * WebSocket handler for WeLink messages.
  * Routes messages through gateway client (dual-identity mode) or direct HTTP fallback.
@@ -104,7 +106,7 @@ public class WeLinkWebSocketHandler implements WebSocketHandler {
      */
     private void sendAck(WebSocketSession session, WeLinkMessage message) {
         try {
-            String ack = objectMapper.writeValueAsString(Map.of(
+            String ack = objectMapper.writeValueAsString(java.util.Map.of(
                     "type", "ack",
                     "msg_id", message.getMsgId(),
                     "timestamp", System.currentTimeMillis()
@@ -120,7 +122,7 @@ public class WeLinkWebSocketHandler implements WebSocketHandler {
      */
     private void sendError(WebSocketSession session, String errorMessage) {
         try {
-            String error = objectMapper.writeValueAsString(Map.of(
+            String error = objectMapper.writeValueAsString(java.util.Map.of(
                     "type", "error",
                     "message", errorMessage,
                     "timestamp", System.currentTimeMillis()
@@ -129,21 +131,5 @@ public class WeLinkWebSocketHandler implements WebSocketHandler {
         } catch (Exception e) {
             log.error("Error sending error message", e);
         }
-    }
-
-    // Helper for Map.of
-    private static <K, V> java.util.Map<K, V> Map(K k1, V v1, K k2, V v2, K k3, V v3) {
-        java.util.Map<K, V> map = new java.util.HashMap<>();
-        map.put(k1, v1);
-        map.put(k2, v2);
-        map.put(k3, v3);
-        return map;
-    }
-
-    private static <K, V> java.util.Map<K, V> Map(K k1, V v1, K k2, V v2) {
-        java.util.Map<K, V> map = new java.util.HashMap<>();
-        map.put(k1, v1);
-        map.put(k2, v2);
-        return map;
     }
 }

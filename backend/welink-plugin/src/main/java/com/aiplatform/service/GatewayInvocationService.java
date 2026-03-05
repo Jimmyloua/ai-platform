@@ -417,7 +417,20 @@ public class GatewayInvocationService {
                     chunks.add(delta.getContent());
                 }
                 if (delta.getToolCalls() != null) {
-                    toolCalls.addAll(delta.getToolCalls());
+                    // Convert ToolCallDelta to ToolCall - for now just store the JSON representation
+                    // ToolCallDelta is for streaming, ToolCall is the final form
+                    for (var tcDelta : delta.getToolCalls()) {
+                        OpenCodeMessage.ToolCall tc = OpenCodeMessage.ToolCall.builder()
+                                .id(tcDelta.getId())
+                                .type(tcDelta.getType() != null ? tcDelta.getType() : "function")
+                                .function(tcDelta.getFunction() != null ?
+                                        OpenCodeMessage.ToolCall.FunctionCall.builder()
+                                                .name(tcDelta.getFunction().getName())
+                                                .arguments(tcDelta.getFunction().getArguments())
+                                                .build() : null)
+                                .build();
+                        toolCalls.add(tc);
+                    }
                 }
             }
         }

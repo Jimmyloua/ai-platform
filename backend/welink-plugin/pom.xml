@@ -15,6 +15,13 @@
     <description>WeLink integration plugin for AI Platform</description>
 
     <dependencies>
+        <!-- Skill Server (for shared DTOs) -->
+        <dependency>
+            <groupId>com.aiplatform</groupId>
+            <artifactId>skill-server</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- Spring Boot Starter -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

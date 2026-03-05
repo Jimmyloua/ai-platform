@@ -4,6 +4,7 @@ import com.aiplatform.config.GatewayClientProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.socket.client.ReactorNettyWebSocketClient;
 import org.springframework.web.reactive.socket.client.WebSocketClient;
@@ -80,7 +81,7 @@ public class GatewayClient {
             URI uri = URI.create(properties.getWsUrl());
 
             // Build auth headers for WebSocket handshake
-            Map<String, String> headers = buildAuthHeaders();
+            HttpHeaders headers = buildAuthHeaders();
 
             webSocketClient.execute(uri, headers, session -> {
                 sessionRef.set(session);
@@ -248,7 +249,7 @@ public class GatewayClient {
     /**
      * Build authentication headers for WebSocket handshake
      */
-    private Map<String, String> buildAuthHeaders() {
+    private HttpHeaders buildAuthHeaders() {
         long timestamp = System.currentTimeMillis();
         String signature = signatureGenerator.calculateSignature(
                 "GET",
@@ -259,11 +260,11 @@ public class GatewayClient {
                 properties.getSecretKey()
         );
 
-        return Map.of(
-                "X-Access-Key", properties.getAccessKey(),
-                "X-Timestamp", String.valueOf(timestamp),
-                "X-Signature", signature
-        );
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Access-Key", properties.getAccessKey());
+        headers.set("X-Timestamp", String.valueOf(timestamp));
+        headers.set("X-Signature", signature);
+        return headers;
     }
 
     /**
