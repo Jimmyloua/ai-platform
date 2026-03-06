@@ -87,6 +87,33 @@ app:
       # Maximum sessions per connection
       max-sessions-per-connection: 100
 
+    # Reliable messaging configuration
+    messaging:
+      # Enable reliable message delivery via Redis Streams
+      reliable:
+        enabled: ${RELIABLE_MESSAGING_ENABLED:true}
+        # Request stream name
+        request-stream: aiplatform:requests
+        # Response stream name
+        response-stream: aiplatform:responses
+        # Dead letter stream name
+        deadletter-stream: aiplatform:deadletter
+        # Consumer group name
+        consumer-group: gateway-consumers
+        # Maximum delivery attempts before DLQ
+        max-delivery-count: 3
+        # Claim timeout for pending messages
+        claim-timeout: 5m
+        # Block timeout for reading messages
+        block-timeout: 2s
+
+    # Graceful shutdown configuration
+    shutdown:
+      # Wait for in-flight requests
+      wait-for-requests: true
+      # Maximum wait time
+      timeout: 30s
+
 # Logging Configuration
 logging:
   level:
