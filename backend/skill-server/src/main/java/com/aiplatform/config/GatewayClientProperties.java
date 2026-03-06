@@ -8,8 +8,8 @@ import org.springframework.validation.annotation.Validated;
 import jakarta.validation.constraints.Positive;
 
 /**
- * Gateway client configuration properties.
- * Configures connection to the skill-gateway with AK/SK authentication.
+ * Gateway client configuration properties for skill-server.
+ * Configures connection to the skill-gateway.
  */
 @Data
 @Component
@@ -18,7 +18,7 @@ import jakarta.validation.constraints.Positive;
 public class GatewayClientProperties {
 
     /**
-     * Enable dual-mode (gateway + HTTP fallback)
+     * Enable gateway routing (when disabled, uses local execution)
      */
     private boolean enabled = true;
 
@@ -50,11 +50,6 @@ public class GatewayClientProperties {
     private long heartbeatInterval = 30000;
 
     /**
-     * Enable fallback to direct HTTP when gateway unavailable
-     */
-    private boolean fallbackEnabled = true;
-
-    /**
      * Connection timeout in milliseconds
      */
     @Positive
@@ -65,6 +60,11 @@ public class GatewayClientProperties {
      */
     @Positive
     private long requestTimeout = 60000;
+
+    /**
+     * Enable local fallback when gateway unavailable
+     */
+    private boolean localFallbackEnabled = true;
 
     /**
      * Streaming configuration

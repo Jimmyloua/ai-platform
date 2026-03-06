@@ -1,8 +1,10 @@
 package com.aiplatform.gateway;
 
 import com.aiplatform.config.GatewayClientProperties;
+import com.aiplatform.dto.WebSocketMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
@@ -17,12 +19,14 @@ import jakarta.annotation.PreDestroy;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * WebSocket client for connecting to skill-gateway.
+ * Supports both CLIENT and AGENT modes.
  * Handles AK/SK authentication, connection management, and message routing.
  */
 @Slf4j
@@ -39,11 +43,23 @@ public class GatewayClient {
     private final AtomicBoolean connecting = new AtomicBoolean(false);
     private final AtomicReference<org.springframework.web.reactive.socket.WebSocketSession> sessionRef = new AtomicReference<>();
 
-    // Message sinks for each session
+    // Message sinks for each session (String-based)
     private final Map<String, Sinks.Many<String>> sessionSinks = new ConcurrentHashMap<>();
+
+    // Message sinks for each session (typed)
+    private final Map<String, Sinks.Many<WebSocketMessage.WebSocketMessageBase>> typedSessionSinks = new ConcurrentHashMap<>();
 
     // Shared output sink for sending messages
     private final Sinks.Many<String> outputSink = Sinks.many().unicast().onBackpressureBuffer();
+
+    // Connection ID (assigned by gateway during registration)
+    private volatile String connectionId;
+
+    // Connection mode
+    public enum ConnectionMode { CLIENT, AGENT }
+
+    @Value("${gateway.client.mode:AGENT}")
+    private ConnectionMode connectionMode;
 
     public GatewayClient(GatewayClientProperties properties, ObjectMapper objectMapper) {
         this.properties = properties;
@@ -55,7 +71,7 @@ public class GatewayClient {
     @PostConstruct
     public void init() {
         if (properties.isEnabled()) {
-            log.info("Initializing gateway client: url={}", properties.getWsUrl());
+            log.info("Initializing gateway client: url={}, mode={}", properties.getWsUrl(), connectionMode);
             connect();
         }
     }
@@ -75,10 +91,12 @@ public class GatewayClient {
         }
 
         connecting.set(true);
-        log.info("Connecting to gateway: {}", properties.getWsUrl());
+        String endpoint = connectionMode == ConnectionMode.AGENT ? "/agent" : "/client";
+        String fullUrl = properties.getWsUrl() + endpoint;
+        log.info("Connecting to gateway: {} (mode={})", fullUrl, connectionMode);
 
         try {
-            URI uri = URI.create(properties.getWsUrl());
+            URI uri = URI.create(fullUrl);
 
             // Build auth headers for WebSocket handshake
             HttpHeaders headers = buildAuthHeaders();
@@ -87,7 +105,7 @@ public class GatewayClient {
                 sessionRef.set(session);
                 connected.set(true);
                 connecting.set(false);
-                log.info("Connected to gateway");
+                log.info("Connected to gateway in {} mode", connectionMode);
 
                 // Handle incoming messages
                 Flux<org.springframework.web.reactive.socket.WebSocketMessage> input = session.receive()
@@ -95,21 +113,16 @@ public class GatewayClient {
                         .doOnError(e -> log.error("Error receiving from gateway: {}", e.getMessage()))
                         .onErrorResume(e -> Flux.empty());
 
-                // Send outgoing messages
-                Mono<Void> output = session.send(
-                        outputSink.asFlux()
-                                .map(session::textMessage)
-                );
-
                 // Heartbeat
                 Flux<String> heartbeat = Flux.interval(Duration.ofMillis(properties.getHeartbeatInterval()))
                         .map(i -> createHeartbeat());
 
-                // Merge input handling with heartbeat
+                // Merge input handling with heartbeat and output
                 return session.send(
                         Flux.merge(
                                 input.map(m -> session.textMessage(m.getPayloadAsText())),
-                                heartbeat.map(session::textMessage)
+                                heartbeat.map(session::textMessage),
+                                outputSink.asFlux().map(session::textMessage)
                         )
                 ).then();
             }).subscribe(
@@ -179,6 +192,14 @@ public class GatewayClient {
     }
 
     /**
+     * Register a session with typed sink for receiving messages
+     */
+    public void registerSession(String sessionId, Sinks.Many<WebSocketMessage.WebSocketMessageBase> sink) {
+        typedSessionSinks.put(sessionId, sink);
+        log.debug("Registered typed session: {}", sessionId);
+    }
+
+    /**
      * Unregister a session sink
      */
     public void unregisterSession(String sessionId) {
@@ -186,7 +207,25 @@ public class GatewayClient {
         if (sink != null) {
             sink.tryEmitComplete();
         }
+        Sinks.Many<WebSocketMessage.WebSocketMessageBase> typedSink = typedSessionSinks.remove(sessionId);
+        if (typedSink != null) {
+            typedSink.tryEmitComplete();
+        }
         log.debug("Unregistered session: {}", sessionId);
+    }
+
+    /**
+     * Get connection ID (assigned by gateway during registration)
+     */
+    public Optional<String> getConnectionId() {
+        return Optional.ofNullable(connectionId);
+    }
+
+    /**
+     * Get connection mode
+     */
+    public ConnectionMode getConnectionMode() {
+        return connectionMode;
     }
 
     /**
@@ -196,20 +235,55 @@ public class GatewayClient {
         try {
             log.debug("Received message from gateway: {}", message);
 
-            // Parse to get session ID
+            // Parse to get session ID and type
             Map<String, Object> parsed = objectMapper.readValue(message, Map.class);
             String sessionId = (String) parsed.get("sessionId");
+            String type = (String) parsed.get("type");
+
+            // Handle session registration confirmation
+            if ("session.registered".equals(type)) {
+                this.connectionId = (String) parsed.get("connectionId");
+                log.info("Gateway registered connection: connectionId={}", connectionId);
+            }
 
             if (sessionId != null) {
+                // Dispatch to string sink
                 Sinks.Many<String> sink = sessionSinks.get(sessionId);
                 if (sink != null) {
                     sink.tryEmitNext(message);
-                } else {
+                }
+
+                // Dispatch to typed sink
+                Sinks.Many<WebSocketMessage.WebSocketMessageBase> typedSink = typedSessionSinks.get(sessionId);
+                if (typedSink != null) {
+                    WebSocketMessage.WebSocketMessageBase typedMessage = parseTypedMessage(message, type);
+                    if (typedMessage != null) {
+                        typedSink.tryEmitNext(typedMessage);
+                    }
+                }
+
+                if (sink == null && typedSink == null) {
                     log.warn("No sink for session: {}", sessionId);
                 }
             }
         } catch (Exception e) {
             log.error("Error handling incoming message: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Parse typed message based on type
+     */
+    private WebSocketMessage.WebSocketMessageBase parseTypedMessage(String json, String type) {
+        try {
+            // Import OpenCodeMessage types
+            if (type != null && type.startsWith("agent.")) {
+                return objectMapper.readValue(json, WebSocketMessage.WebSocketMessageBase.class);
+            }
+            return objectMapper.readValue(json, WebSocketMessage.WebSocketMessageBase.class);
+        } catch (Exception e) {
+            log.error("Error parsing typed message: {}", e.getMessage());
+            return null;
         }
     }
 
@@ -220,6 +294,7 @@ public class GatewayClient {
         connected.set(false);
         connecting.set(false);
         sessionRef.set(null);
+        connectionId = null;
 
         // Complete all session sinks
         sessionSinks.values().forEach(sink -> {
@@ -230,6 +305,16 @@ public class GatewayClient {
             }
         });
         sessionSinks.clear();
+
+        // Complete all typed session sinks
+        typedSessionSinks.values().forEach(sink -> {
+            try {
+                sink.tryEmitComplete();
+            } catch (Exception e) {
+                log.debug("Error completing typed sink: {}", e.getMessage());
+            }
+        });
+        typedSessionSinks.clear();
 
         // Schedule reconnect
         if (properties.isEnabled()) {

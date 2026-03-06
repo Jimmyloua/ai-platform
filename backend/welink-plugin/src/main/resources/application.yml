@@ -46,10 +46,12 @@ welink:
     url: http://localhost:8080
     timeout: 60000
 
-# Gateway Client Configuration (Dual-Identity Mode)
+# Gateway Client Configuration (Agent Mode)
+# Receives routed requests: CUI -> SkillServer -> SkillGateway -> WeLinkPlugin (this) -> ExternalAgent
 gateway:
   client:
-    # Enable dual-mode: gateway with AK/SK as primary, direct HTTP fallback if unavailable
+    # Agent mode - connects to gateway as an agent
+    mode: AGENT
     enabled: true
     ws-url: ws://localhost:8081/ws/gateway
     access-key: ${GATEWAY_ACCESS_KEY:}
@@ -59,11 +61,20 @@ gateway:
     # Fallback to direct HTTP if gateway unavailable
     fallback-enabled: true
     connection-timeout: 10000
+    request-timeout: 60000
     # Streaming configuration
     streaming:
       enabled: true
       chunk-timeout: 30000
       max-chunks-per-session: 10000
+
+# External Agent Configuration
+# Final hop: WeLinkPlugin -> External OpenCode/Agent
+agent:
+  external:
+    enabled: ${EXTERNAL_AGENT_ENABLED:true}
+    url: ${EXTERNAL_AGENT_URL:http://localhost:8082}
+    timeout: 60000
 
 # Logging Configuration
 logging:

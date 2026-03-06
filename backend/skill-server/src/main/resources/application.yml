@@ -93,6 +93,25 @@ app:
         enabled: true
         streaming-default: true
 
+# Gateway Client Configuration
+# Routes requests: CUI -> SkillServer -> SkillGateway -> WeLinkPlugin -> Agent
+gateway:
+  client:
+    enabled: ${GATEWAY_ENABLED:true}
+    ws-url: ${GATEWAY_URL:ws://localhost:8081/ws/gateway}
+    access-key: ${GATEWAY_ACCESS_KEY:}
+    secret-key: ${GATEWAY_SECRET_KEY:}
+    reconnect-interval: 5000
+    heartbeat-interval: 30000
+    connection-timeout: 10000
+    request-timeout: 60000
+    # Local fallback when gateway unavailable
+    local-fallback-enabled: true
+    streaming:
+      enabled: true
+      chunk-timeout: 30000
+      max-chunks-per-session: 10000
+
 # Logging Configuration
 logging:
   level:

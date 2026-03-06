@@ -5,6 +5,7 @@ import com.aiplatform.agent.AgentAdapterRegistry;
 import com.aiplatform.agent.AgentExecutionContext;
 import com.aiplatform.dto.OpenCodeMessage;
 import com.aiplatform.dto.WebSocketMessage;
+import com.aiplatform.routing.ExecutionRouter;
 import com.aiplatform.service.SessionService;
 import com.aiplatform.service.SkillExecutionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,7 +25,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Main WebSocket handler for skill server.
- * Handles WebSocket connections, message routing, and skill execution.
+ * Entry point for CUI/IM clients.
+ * Routes requests through: SkillServer -> SkillGateway -> WeLinkPlugin -> Agent
  * Supports both skill.execute and agent.execute protocols.
  */
 @Slf4j
@@ -35,7 +37,7 @@ public class SkillWebSocketHandler implements WebSocketHandler {
     private final ObjectMapper objectMapper;
     private final SessionService sessionService;
     private final SkillExecutionService skillExecutionService;
-    private final AgentAdapterRegistry agentAdapterRegistry;
+    private final ExecutionRouter executionRouter;
 
     // Active sessions: sessionId -> message sink
     private final Map<String, Sinks.Many<String>> activeSessions = new ConcurrentHashMap<>();
@@ -132,9 +134,8 @@ public class SkillWebSocketHandler implements WebSocketHandler {
                     .channel(request.getPayload().getChannel())
                     .build();
 
-            // Get appropriate adapter and execute
-            AgentAdapter adapter = agentAdapterRegistry.getAdapter(WebSocketMessage.SkillExecuteRequest.TYPE);
-            executeWithAdapter(context, adapter, outputSink);
+            // Route through gateway or execute locally
+            executeWithContext(context, outputSink);
 
         } catch (Exception e) {
             log.error("Error executing skill: {}", e.getMessage(), e);
@@ -173,9 +174,8 @@ public class SkillWebSocketHandler implements WebSocketHandler {
                     .channel(request.getPayload().getChannel())
                     .build();
 
-            // Get OpenCode adapter and execute
-            AgentAdapter adapter = agentAdapterRegistry.getAdapter(OpenCodeMessage.AgentExecuteRequest.TYPE);
-            executeWithAdapter(context, adapter, outputSink);
+            // Route through gateway or execute locally
+            executeWithContext(context, outputSink);
 
         } catch (Exception e) {
             log.error("Error executing agent: {}", e.getMessage(), e);
@@ -184,10 +184,13 @@ public class SkillWebSocketHandler implements WebSocketHandler {
     }
 
     /**
-     * Execute with adapter and stream results
+     * Execute with context using ExecutionRouter
      */
-    private void executeWithAdapter(AgentExecutionContext context, AgentAdapter adapter, Sinks.Many<String> outputSink) {
-        adapter.execute(context)
+    private void executeWithContext(AgentExecutionContext context, Sinks.Many<String> outputSink) {
+        log.info("Routing execution: sessionId={}, gatewayAvailable={}",
+                context.getSessionId(), executionRouter.isGatewayAvailable());
+
+        executionRouter.execute(context)
                 .subscribe(
                         response -> {
                             try {
@@ -198,10 +201,14 @@ public class SkillWebSocketHandler implements WebSocketHandler {
                             }
                         },
                         error -> {
-                            log.error("Adapter execution failed: {}", error.getMessage());
-                            sendError(outputSink, context.getSessionId(), "EXECUTION_ERROR", error.getMessage());
+                            log.error("Execution failed: {}", error.getMessage());
+                            if (context.getProtocolType().startsWith("agent.")) {
+                                sendAgentError(outputSink, context.getSessionId(), "EXECUTION_ERROR", error.getMessage());
+                            } else {
+                                sendError(outputSink, context.getSessionId(), "EXECUTION_ERROR", error.getMessage());
+                            }
                         },
-                        () -> log.info("Adapter execution completed: sessionId={}", context.getSessionId())
+                        () -> log.info("Execution completed: sessionId={}", context.getSessionId())
                 );
     }
 
@@ -249,9 +256,8 @@ public class SkillWebSocketHandler implements WebSocketHandler {
                     WebSocketMessage.SkillCancelRequest.class
             );
             skillExecutionService.cancelSkill(request.getSessionId());
-            // Also cancel via adapter
-            AgentAdapter adapter = agentAdapterRegistry.getAdapter("skill.execute");
-            adapter.cancel(request.getSessionId());
+            // Cancel via router
+            executionRouter.cancel(request.getSessionId());
             log.info("Skill cancelled: sessionId={}", request.getSessionId());
         } catch (Exception e) {
             log.error("Error cancelling skill: {}", e.getMessage());
@@ -268,8 +274,7 @@ public class SkillWebSocketHandler implements WebSocketHandler {
                     message,
                     OpenCodeMessage.AgentCancelRequest.class
             );
-            AgentAdapter adapter = agentAdapterRegistry.getAdapter("agent.execute");
-            adapter.cancel(request.getSessionId());
+            executionRouter.cancel(request.getSessionId());
             log.info("Agent cancelled: sessionId={}", request.getSessionId());
         } catch (Exception e) {
             log.error("Error cancelling agent: {}", e.getMessage());
